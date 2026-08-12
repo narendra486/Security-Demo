@@ -62,12 +62,8 @@ jobs:
                           f"**{total} ERROR-level findings detected.**\n\n"
                       )
 
-                  out.write(
-                      "| Severity | Finding | File | Line |\n"
-                  )
-                  out.write(
-                      "|---|---|---|---:|\n"
-                  )
+                  out.write("| Severity | Finding | File | Line |\n")
+                  out.write("|---|---|---|---:|\n")
 
                   for result in results[:5]:
                       extra = result.get("extra", {})
@@ -99,7 +95,6 @@ jobs:
                           "N/A"
                       )
 
-                      # Keep Markdown table valid
                       finding = (
                           str(finding)
                           .replace("|", "\\|")
@@ -112,7 +107,6 @@ jobs:
                           .replace("\n", " ")
                       )
 
-                      # Keep table compact
                       if len(finding) > 70:
                           finding = finding[:67] + "..."
 
