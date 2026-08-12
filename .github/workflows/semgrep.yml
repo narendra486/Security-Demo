@@ -30,3 +30,133 @@ jobs:
             --severity ERROR \
             --json \
             --output semgrep.json
+
+      - name: Create PR Summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python3 - <<'PY'
+          import json
+
+          with open("semgrep.json") as f:
+              data = json.load(f)
+
+          results = data.get("results", [])
+
+          with open("comment.md", "w") as out:
+              out.write("## Semgrep Security Scan\n\n")
+
+              if not results:
+                  out.write(
+                      "No **ERROR-level** security findings detected.\n"
+                  )
+              else:
+                  total = len(results)
+
+                  if total > 5:
+                      out.write(
+                          f"**{total} ERROR-level findings detected. "
+                          "Showing top 5.**\n\n"
+                      )
+                  else:
+                      out.write(
+                          f"**{total} ERROR-level findings detected.**\n\n"
+                      )
+
+                  out.write(
+                      "| Severity | Finding | File | Line |\n"
+                  )
+                  out.write(
+                      "|---|---|---|---:|\n"
+                  )
+
+                  for result in results[:5]:
+                      extra = result.get("extra", {})
+                      metadata = extra.get("metadata", {})
+
+                      severity = extra.get(
+                          "severity",
+                          "ERROR"
+                      )
+
+                      finding = metadata.get(
+                          "name",
+                          extra.get(
+                              "message",
+                              "No description available"
+                          )
+                      )
+
+                      file_path = result.get(
+                          "path",
+                          "N/A"
+                      )
+
+                      line = result.get(
+                          "start",
+                          {}
+                      ).get(
+                          "line",
+                          "N/A"
+                      )
+
+                      # Keep Markdown table valid
+                      finding = (
+                          str(finding)
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
+
+                      file_path = (
+                          str(file_path)
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
+
+                      # Keep table compact
+                      if len(finding) > 70:
+                          finding = finding[:67] + "..."
+
+                      if len(file_path) > 50:
+                          file_path = "..." + file_path[-47:]
+
+                      out.write(
+                          f"| {severity} | {finding} | "
+                          f"`{file_path}` | {line} |\n"
+                      )
+
+                  if total > 5:
+                      out.write(
+                          f"\n> Showing **5 of {total}** findings. "
+                          "See GitHub Code Scanning for the complete results.\n"
+                      )
+
+          PY
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: semgrep-security
+          recreate: true
+          path: comment.md
+
+      - name: Generate SARIF
+        if: always()
+        run: |
+          semgrep scan \
+            --config p/default \
+            --severity ERROR \
+            --sarif \
+            --output semgrep.sarif
+
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+      - name: Block PR on ERROR findings
+        if: steps.semgrep.outcome == 'failure'
+        run: |
+          echo "Semgrep found ERROR-level security findings."
+          exit 1
